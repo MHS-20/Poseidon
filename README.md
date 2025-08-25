@@ -1,5 +1,6 @@
 # Poseidon
 ## Container Orchestrator from scratch
 
-<img src="logo.png" alt="Logo" width="300" style="display: block; margin: 0 auto;"/>
-
+<div align="center">
+<img src="logo.png" alt="Logo" width="200"/>
+</div>
