@@ -6,7 +6,7 @@ import (
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 
-	"poseidon/task"
+	"github.com/MHS-20/poseidon/task"
 )
 
 type Worker struct {
