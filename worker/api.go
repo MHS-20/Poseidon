@@ -10,3 +10,8 @@ type Api struct {
 	Worker  *Worker
 	Router  *chi.Mux
 }
+
+type ErrResponse struct {
+	HTTPStatusCode int
+	Message        string
+}

@@ -23,6 +23,18 @@ func (w *Worker) CollectStats() {
 	fmt.Println("I will collect stats")
 }
 
+func (w *Worker) AddTask(t task.Task) {
+	w.Queue.Enqueue(t)
+}
+
+func (w *Worker) GetTasks() []*task.Task {
+	tasks := []*task.Task{}
+	for _, t := range w.Db {
+		tasks = append(tasks, t)
+	}
+	return tasks
+}
+
 // put task t in the state s
 func (w *Worker) RunTask() task.DockerResult {
 	t := w.Queue.Dequeue()
@@ -56,10 +68,6 @@ func (w *Worker) RunTask() task.DockerResult {
 		result.Error = err
 	}
 	return result
-}
-
-func (w *Worker) AddTask(t task.Task) {
-	w.Queue.Enqueue(t)
 }
 
 func (w *Worker) StartTask(t task.Task) task.DockerResult {
