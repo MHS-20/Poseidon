@@ -14,8 +14,8 @@ import (
 
 type Worker struct {
 	Name      string
-	Queue     queue.Queue
-	Db        map[uuid.UUID]*task.Task
+	Queue     queue.Queue              // desidered state of tasks
+	Db        map[uuid.UUID]*task.Task // current state of tasks
 	TaskCount int
 }
 
