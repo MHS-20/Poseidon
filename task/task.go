@@ -30,6 +30,9 @@ type Task struct {
 	RestartPolicy string
 	StartTime     time.Time
 	FinishTime    time.Time
+	HealthCheck   string
+	RestartCount  int
+	HostPorts     nat.PortMap
 }
 
 type TaskEvent struct {
