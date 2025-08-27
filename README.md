@@ -21,7 +21,17 @@ Container Orchestrator from scratch
 <br/><br>
 
 
+### Features
+- Starting, stopping, deleting docker containers
+- Starting, stopping, deleting tasks
+- Checking validity of state transitions
+- Worker API (task submission, task list, task deletion)
+- Collecting and exposing tasks' metrics
+- Scheduling tasks on workers
+- Health Checks and Restart Policies
+
 ### What's missing
+- Service Discovery
 - High availability
 - Load balancing
 - Security
