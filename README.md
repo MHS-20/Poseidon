@@ -28,11 +28,10 @@ Container Orchestrator from scratch
 - Worker API (task submission, task list, task deletion)
 - Collecting and exposing tasks' metrics
 - Scheduling tasks on workers
-- Health Checks and Restart Policies
+- Task Health Checks and Restart Policies
 
 ### What's missing
 - Service Discovery
-- High availability
+- High availability (manager replication)
 - Load balancing
 - Security
-
