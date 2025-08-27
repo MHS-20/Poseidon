@@ -32,5 +32,10 @@ func (a *Api) initRouter() {
 
 func (a *Api) Start() {
 	a.initRouter()
-	http.ListenAndServe(fmt.Sprintf("%s:%d", a.Address, a.Port), a.Router)
+	addr := fmt.Sprintf("%s:%d", a.Address, a.Port)
+	fmt.Printf("API server starting on %s\n", addr)
+	err := http.ListenAndServe(addr, a.Router)
+	if err != nil {
+		fmt.Printf("Error starting server: %v\n", err)
+	}
 }
