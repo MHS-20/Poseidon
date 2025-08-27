@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/MHS-20/poseidon/task"
@@ -52,36 +55,35 @@ func stopContainer(d *task.Docker, id string) *task.DockerResult {
 }
 
 func main() {
-	db := make(map[uuid.UUID]*task.Task)
+	host := os.Getenv("POSEIDON_HOST")
+	port, _ := strconv.Atoi(os.Getenv("POSEIDON_PORT"))
+
+	fmt.Println("Starting Poseidon worker")
+	fmt.Println(host)
+	fmt.Println(port)
+
 	w := worker.Worker{
 		Queue: *queue.New(),
-		Db:    db,
+		Db:    make(map[uuid.UUID]*task.Task),
 	}
+	api := worker.Api{Address: host, Port: port, Worker: &w}
 
-	t := task.Task{
-		ID:    uuid.New(),
-		Name:  "test-container-1",
-		State: task.Scheduled,
-		Image: "strm/helloworld-http",
-	}
+	go runTasks(&w)
+	fmt.Println("Starting API server")
+	api.Start()
+}
 
-	fmt.Println("starting task")
-	w.AddTask(t)
-	result := w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
-	}
-
-	t.ContainerID = result.ContainerId
-	fmt.Printf("task %s is running in container %s\n", t.ID, t.ContainerID)
-	fmt.Println("Sleepy time")
-	time.Sleep(time.Second * 10)
-
-	fmt.Printf("stopping task %s\n", t.ID)
-	t.State = task.Completed
-	w.AddTask(t)
-	result = w.RunTask()
-	if result.Error != nil {
-		panic(result.Error)
+func runTasks(w *worker.Worker) {
+	for {
+		if w.Queue.Len() != 0 {
+			result := w.RunTask()
+			if result.Error != nil {
+				log.Printf("Error running task: %v\n", result.Error)
+			}
+		} else {
+			log.Printf("No tasks to process currently.\n")
+		}
+		log.Println("Sleeping for 10 seconds.")
+		time.Sleep(10 * time.Second)
 	}
 }
