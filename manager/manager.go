@@ -24,6 +24,10 @@ type Manager struct {
 	TaskWorkerMap map[uuid.UUID]string
 }
 
+func (m *Manager) AddTask(te task.TaskEvent) {
+	m.Pending.Enqueue(te)
+}
+
 func (m *Manager) SelectWorker() string {
 	var newWorker int
 	if m.LastWorker+1 < len(m.Workers) {
@@ -34,10 +38,6 @@ func (m *Manager) SelectWorker() string {
 		m.LastWorker = 0
 	}
 	return m.Workers[newWorker]
-}
-
-func (m *Manager) UpdateTasks() {
-	fmt.Println("I will update tasks")
 }
 
 func (m *Manager) SendWork() {
@@ -90,5 +90,45 @@ func (m *Manager) SendWork() {
 		log.Printf("%#v\n", t)
 	} else {
 		log.Println("No work in the queue")
+	}
+}
+
+func (m *Manager) UpdateTasks() {
+	for _, worker := range m.Workers {
+		log.Printf("Checking worker %v for task updates\n", worker)
+		url := fmt.Sprintf("http://%s/tasks", worker)
+		resp, err := http.Get(url)
+		if err != nil {
+			log.Printf("Error connecting to %v: %v\n", worker, err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Error sending request: %v\n", err)
+		}
+
+		d := json.NewDecoder(resp.Body)
+		var tasks []*task.Task
+		err = d.Decode(&tasks)
+		if err != nil {
+			log.Printf("Error unmarshalling tasks: %s\n", err.Error())
+		}
+
+		for _, t := range tasks {
+			log.Printf("Attempting to update task %v\n", t.ID)
+
+			_, ok := m.TaskDb[t.ID]
+			if !ok {
+				log.Printf("Task with ID %s not found\n", t.ID)
+				return
+			}
+			if m.TaskDb[t.ID].State != t.State {
+				m.TaskDb[t.ID].State = t.State
+			}
+
+			m.TaskDb[t.ID].StartTime = t.StartTime
+			m.TaskDb[t.ID].FinishTime = t.FinishTime
+			m.TaskDb[t.ID].ContainerID = t.ContainerID
+		}
+
 	}
 }
