@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/MHS-20/poseidon/task"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
@@ -37,4 +40,33 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
 	json.NewEncoder(w).Encode(te.Task)
+}
+
+func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
+	taskID := chi.URLParam(r, "taskID")
+	if taskID == "" {
+		log.Printf("No taskID passed in request.\n")
+		w.WriteHeader(400)
+	}
+
+	tID, _ := uuid.Parse(taskID)
+	taskToStop, ok := a.Manager.TaskDb[tID]
+	if !ok {
+		log.Printf("No task with ID %v found", tID)
+		w.WriteHeader(404)
+	}
+
+	te := task.TaskEvent{
+		ID:        uuid.New(),
+		State:     task.Completed,
+		Timestamp: time.Now(),
+	}
+
+	taskCopy := *taskToStop
+	taskCopy.State = task.Completed
+	te.Task = taskCopy
+	a.Manager.AddTask(te)
+
+	log.Printf("Added task event %v to stop task %v\n", te.ID, taskToStop.ID)
+	w.WriteHeader(204)
 }
