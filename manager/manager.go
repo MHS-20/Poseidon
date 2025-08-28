@@ -7,10 +7,13 @@ import (
 	"log"
 	"net/http"
 	"time"
+  "errors"
+  "strings"
 
 	"github.com/MHS-20/poseidon/task"
 	"github.com/MHS-20/poseidon/worker"
 
+	"github.com/docker/go-connections/nat"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
@@ -35,6 +38,13 @@ func (m *Manager) GetTasks() []*task.Task {
 		tasks = append(tasks, t)
 	}
 	return tasks
+}
+
+func getHostPort(ports nat.PortMap) *string {
+ for k, _ := range ports {
+ return &ports[k][0].HostPort
+ }
+ return nil
 }
 
 func New(workers []string) *Manager {
@@ -177,4 +187,35 @@ func (m *Manager) updateTasks() {
 		}
 
 	}
+}
+
+
+func (m *Manager) checkTaskHealth(t task.Task) error {
+	log.Printf("Calling health check for task %s: %s\n", t.ID, t.HealthCheck)
+
+	w := m.TaskWorkerMap[t.ID]
+	hostPort := getHostPort(t.HostPorts)
+	worker := strings.Split(w, ":")
+	if hostPort == nil {
+		log.Printf("Have not collected task %s host port yet. Skipping.\n", t.ID)
+		return nil
+	}
+	url := fmt.Sprintf("http://%s:%s%s", worker[0], *hostPort, t.HealthCheck)
+	log.Printf("Calling health check for task %s: %s\n", t.ID, url)
+	resp, err := http.Get(url)
+	if err != nil {
+		msg := fmt.Sprintf("Error connecting to health check %s", url)
+		log.Println(msg)
+		return errors.New(msg)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		msg := fmt.Sprintf("Error health check for task %s did not return 200\n", t.ID)
+		log.Println(msg)
+		return errors.New(msg)
+	}
+
+	log.Printf("Task %s health check response: %v\n", t.ID, resp.StatusCode)
+
+	return nil
 }
