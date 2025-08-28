@@ -60,18 +60,44 @@ func main() {
 	mport, _ := strconv.Atoi(os.Getenv("POSEIDON_MANAGER_PORT"))
 
 	fmt.Println("Starting Poseidon worker")
-	w := worker.Worker{
+
+	w1 := worker.Worker{
 		Queue: *queue.New(),
 		Db:    make(map[uuid.UUID]*task.Task),
 	}
-	wapi := worker.Api{Address: whost, Port: wport, Worker: &w}
-	go w.RunTasks()
-	go w.CollectStats()
-	go wapi.Start()
+	wapi1 := worker.Api{Address: whost, Port: wport, Worker: &w1}
+
+	w2 := worker.Worker{
+		Queue: *queue.New(),
+		Db:    make(map[uuid.UUID]*task.Task),
+	}
+	wapi2 := worker.Api{Address: whost, Port: wport + 1, Worker: &w2}
+
+	w3 := worker.Worker{
+		Queue: *queue.New(),
+		Db:    make(map[uuid.UUID]*task.Task),
+	}
+	wapi3 := worker.Api{Address: whost, Port: wport + 2, Worker: &w3}
+
+	go w1.RunTasks()
+	go w1.UpdateTasks()
+	go wapi1.Start()
+	go w2.RunTasks()
+	go w2.UpdateTasks()
+	go wapi2.Start()
+	go w3.RunTasks()
+	go w3.UpdateTasks()
+	go wapi3.Start()
+
+	workers := []string{
+		fmt.Sprintf("%s:%d", whost, wport),
+		fmt.Sprintf("%s:%d", whost, wport+1),
+		fmt.Sprintf("%s:%d", whost, wport+2),
+	}
 
 	fmt.Println("Starting Poseidon manager")
-	workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
-	m := manager.New(workers)
+	// workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
+	m := manager.New(workers, "roundrobin")
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()
