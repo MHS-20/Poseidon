@@ -3,12 +3,12 @@ package manager
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
-  "errors"
-  "strings"
 
 	"github.com/MHS-20/poseidon/task"
 	"github.com/MHS-20/poseidon/worker"
@@ -41,10 +41,10 @@ func (m *Manager) GetTasks() []*task.Task {
 }
 
 func getHostPort(ports nat.PortMap) *string {
- for k, _ := range ports {
- return &ports[k][0].HostPort
- }
- return nil
+	for k, _ := range ports {
+		return &ports[k][0].HostPort
+	}
+	return nil
 }
 
 func New(workers []string) *Manager {
@@ -189,7 +189,6 @@ func (m *Manager) updateTasks() {
 	}
 }
 
-
 func (m *Manager) checkTaskHealth(t task.Task) error {
 	log.Printf("Calling health check for task %s: %s\n", t.ID, t.HealthCheck)
 
@@ -218,4 +217,79 @@ func (m *Manager) checkTaskHealth(t task.Task) error {
 	log.Printf("Task %s health check response: %v\n", t.ID, resp.StatusCode)
 
 	return nil
+}
+
+func (m *Manager) DoHealthChecks() {
+	for {
+		log.Println("Performing task health check")
+		m.doHealthChecks()
+		log.Println("Task health checks completed")
+		log.Println("Sleeping for 60 seconds")
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func (m *Manager) doHealthChecks() {
+	for _, t := range m.GetTasks() {
+		if t.State == task.Running && t.RestartCount < 3 {
+			err := m.checkTaskHealth(*t)
+			if err != nil {
+				if t.RestartCount < 3 {
+					m.restartTask(t)
+				}
+			}
+		} else if t.State == task.Failed && t.RestartCount < 3 {
+			m.restartTask(t)
+		}
+	}
+}
+
+func (m *Manager) restartTask(t *task.Task) {
+	// Get the worker where the task was running
+	w := m.TaskWorkerMap[t.ID]
+	t.State = task.Scheduled
+	t.RestartCount++
+	// We need to overwrite the existing task to ensure it has
+	// the current state
+	m.TaskDb[t.ID] = t
+
+	te := task.TaskEvent{
+		ID:        uuid.New(),
+		State:     task.Running,
+		Timestamp: time.Now(),
+		Task:      *t,
+	}
+	data, err := json.Marshal(te)
+	if err != nil {
+		log.Printf("Unable to marshal task object: %v.\n", t)
+		return
+	}
+
+	url := fmt.Sprintf("http://%s/tasks", w)
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Error connecting to %v: %v\n", w, err)
+		m.Pending.Enqueue(t)
+		return
+	}
+
+	d := json.NewDecoder(resp.Body)
+	if resp.StatusCode != http.StatusCreated {
+		e := worker.ErrResponse{}
+		err := d.Decode(&e)
+		if err != nil {
+			fmt.Printf("Error decoding response: %s\n", err.Error())
+			return
+		}
+		log.Printf("Response error (%d): %s\n", e.HTTPStatusCode, e.Message)
+		return
+	}
+
+	newTask := task.Task{}
+	err = d.Decode(&newTask)
+	if err != nil {
+		fmt.Printf("Error decoding response: %s\n", err.Error())
+		return
+	}
+	log.Printf("%#v\n", t)
 }
