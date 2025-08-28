@@ -20,18 +20,20 @@ Container Orchestrator from scratch
 5) **CLI**: command-line interface for users to interact with the orchestrator, submit tasks, and check status.
 <br/><br>
 
-
 ### Features
 - Starting, stopping, deleting docker containers
 - Starting, stopping, deleting tasks
 - Checking validity of state transitions
-- Worker API (task submission, task list, task deletion)
 - Collecting and exposing tasks' metrics
-- Scheduling tasks on workers
+- Worker API (task submission, task list, task deletion)
+- Manager control loop
+- Scheduling tasks on workers (RoundRobin, E-PVM)
 - Task Health Checks and Restart Policies
+- Manager API (task submission, task list, task deletion)
+
 
 ### What's missing
 - Service Discovery
-- High availability (manager replication)
-- Load balancing
+- High availability
+- Load balancer
 - Security
