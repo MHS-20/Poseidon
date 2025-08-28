@@ -121,6 +121,26 @@ func (m *Manager) SelectWorker(t task.Task) (*node.Node, error) {
 	return selectedNode, nil
 }
 
+func (m *Manager) stopTask(worker string, taskID string) {
+	client := &http.Client{}
+	url := fmt.Sprintf("http://%s/tasks/%s", worker, taskID)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		log.Printf("error creating request to delete task %s: %v\n", taskID, err)
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("error connecting to worker at %s: %v\n", url, err)
+		return
+	}
+	if resp.StatusCode != 204 {
+		log.Printf("Error sending request: %v\n", err)
+		return
+	}
+	log.Printf("task %s has been scheduled to be stopped", taskID)
+}
+
 func (m *Manager) SendWork() {
 	if m.Pending.Len() > 0 {
 		e := m.Pending.Dequeue()
@@ -128,6 +148,18 @@ func (m *Manager) SendWork() {
 
 		m.EventDb[te.ID] = &te
 		log.Printf("Pulled %v off pending queue", te)
+
+		taskWorker, ok := m.TaskWorkerMap[te.Task.ID]
+		if ok {
+			persistedTask := m.TaskDb[te.Task.ID]
+			if te.State == task.Completed && task.ValidStateTransition(persistedTask.State, te.State) {
+				m.stopTask(taskWorker, te.Task.ID.String())
+				return
+			}
+
+			log.Printf("invalid request: existing task %s is in state %v and cannot transition to the completed state\n", persistedTask.ID.String(), persistedTask.State)
+			return
+		}
 
 		t := te.Task
 		w, err := m.SelectWorker(t)
@@ -137,6 +169,8 @@ func (m *Manager) SendWork() {
 
 		m.WorkerTaskMap[w.Name] = append(m.WorkerTaskMap[w.Name], te.Task.ID)
 		m.TaskWorkerMap[t.ID] = w.Name
+		url := fmt.Sprintf("http://%s/tasks", w.Name)
+		// }
 
 		t.State = task.Scheduled
 		m.TaskDb[t.ID] = &t
@@ -146,7 +180,7 @@ func (m *Manager) SendWork() {
 			log.Printf("Unable to marshal task object: %v.\n", t)
 		}
 
-		url := fmt.Sprintf("http://%s/tasks", w)
+		// url := fmt.Sprintf("http://%s/tasks", w)
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Error connecting to %v: %v\n", w, err)
