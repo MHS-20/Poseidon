@@ -3,9 +3,6 @@ package scheduler
 import (
 	"github.com/MHS-20/poseidon/node"
 	"github.com/MHS-20/poseidon/task"
-	"log"
-	"math"
-	"time"
 )
 
 type Scheduler interface {
