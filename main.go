@@ -73,7 +73,9 @@ func main() {
 	workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
 	m := manager.New(workers)
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
+
 	go m.ProcessTasks()
 	go m.UpdateTasks()
+	go m.DoHealthChecks()
 	mapi.Start()
 }
