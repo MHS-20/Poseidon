@@ -97,7 +97,7 @@ func main() {
 
 	fmt.Println("Starting Poseidon manager")
 	// workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
-	m := manager.New(workers, "roundrobin")
+	m := manager.New(workers, "epvm")
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()
