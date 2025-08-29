@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/MHS-20/poseidon/stats"
 	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 
@@ -16,7 +17,7 @@ type Worker struct {
 	Name      string
 	Queue     queue.Queue              // desidered state of tasks
 	Db        map[uuid.UUID]*task.Task // current state of tasks
-	Stats     *Stats
+	Stats     *stats.Stats
 	TaskCount int
 }
 
@@ -120,7 +121,7 @@ func (w *Worker) StopTask(t task.Task) task.DockerResult {
 func (w *Worker) CollectStats() {
 	for {
 		log.Println("Collecting stats")
-		w.Stats = GetStats()
+		w.Stats = stats.GetStats()
 		w.Stats.TaskCount = w.TaskCount
 		time.Sleep(15 * time.Second)
 	}
