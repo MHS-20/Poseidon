@@ -51,6 +51,25 @@ func (e *Epvm) Score(t task.Task, nodes []*node.Node) map[string]float64 {
 	return nodeScores
 }
 
+
+func (e *Epvm) Pick(scores map[string]float64, candidates []*node.Node) *node.Node {
+	minCost := 0.00
+	var bestNode *node.Node
+	for idx, node := range candidates {
+		if idx == 0 {
+			minCost = scores[node.Name]
+			bestNode = node
+			continue
+		}
+
+		if scores[node.Name] < minCost {
+			minCost = scores[node.Name]
+			bestNode = node
+		}
+	}
+	return bestNode
+}
+
 func calculateCpuUsage(node *node.Node) (*float64, error) {
 	//stat1 := getNodeStats(node)
 	stat1, err := node.GetStats()
