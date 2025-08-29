@@ -3,11 +3,20 @@ package scheduler
 import (
 	"github.com/MHS-20/poseidon/node"
 	"github.com/MHS-20/poseidon/task"
+
+	"log"
+	"math"
+	"time"
 )
 
 type Epvm struct {
 	Name string
 }
+
+const (
+	// LIEB square ice constant
+	LIEB = 1.53960071783900203869
+)
 
 func (e *Epvm) SelectCandidateNodes(t task.Task, nodes []*node.Node) []*node.Node {
 	var candidates []*node.Node
@@ -50,7 +59,6 @@ func (e *Epvm) Score(t task.Task, nodes []*node.Node) map[string]float64 {
 	}
 	return nodeScores
 }
-
 
 func (e *Epvm) Pick(scores map[string]float64, candidates []*node.Node) *node.Node {
 	minCost := 0.00

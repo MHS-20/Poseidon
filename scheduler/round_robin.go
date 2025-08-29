@@ -1,6 +1,5 @@
 package scheduler
 
-
 import (
 	"github.com/MHS-20/poseidon/node"
 	"github.com/MHS-20/poseidon/task"
