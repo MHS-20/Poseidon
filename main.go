@@ -16,9 +16,9 @@ func main() {
 	mport, _ := strconv.Atoi(os.Getenv("POSEIDON_MANAGER_PORT"))
 
 	fmt.Println("Starting Poseidon worker")
-	w1 := worker.New("worker-1", "memory")
-	w2 := worker.New("worker-2", "memory")
-	w3 := worker.New("worker-3", "memory")
+	w1 := worker.New("worker-1", "persistent")
+	w2 := worker.New("worker-2", "persistent")
+	w3 := worker.New("worker-3", "persistent")
 	wapi1 := worker.Api{Address: whost, Port: wport, Worker: w1}
 	wapi2 := worker.Api{Address: whost, Port: wport + 1, Worker: w2}
 	wapi3 := worker.Api{Address: whost, Port: wport + 2, Worker: w3}
@@ -41,7 +41,7 @@ func main() {
 
 	fmt.Println("Starting Poseidon manager")
 	// workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
-	m := manager.New(workers, "epvm", "memory")
+	m := manager.New(workers, "epvm", "persistent")
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()
