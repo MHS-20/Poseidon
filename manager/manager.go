@@ -88,13 +88,26 @@ func New(workers []string, schedulerType string, dbType string) *Manager {
 		Scheduler:     s,
 	}
 
+	var err1, err2 error
 	var ts store.Store
 	var es store.Store
 	switch dbType {
 	case "memory":
 		ts = store.NewInMemoryTaskStore()
 		es = store.NewInMemoryTaskEventStore()
+	case "persistent":
+		ts, err1 = store.NewTaskStore("tasks.db", 0600, "tasks")
+		es, err2 = store.NewEventStore("events.db", 0600, "events")
 	}
+
+	if err1 != nil {
+		log.Fatalf("unable to create task store: %v", err1)
+	}
+
+	if err2 != nil {
+		log.Fatalf("unable to create task event store: %v", err2)
+	}
+
 	m.TaskDb = ts
 	m.EventDb = es
 	return &m
@@ -243,9 +256,11 @@ func (m *Manager) updateTasks() {
 	for _, worker := range m.Workers {
 		log.Printf("Checking worker %v for task updates\n", worker)
 		url := fmt.Sprintf("http://%s/tasks", worker)
+
 		resp, err := http.Get(url)
 		if err != nil {
 			log.Printf("Error connecting to %v: %v\n", worker, err)
+			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
