@@ -9,7 +9,7 @@ import (
 	"github.com/MHS-20/poseidon/worker"
 )
 
-func main() {
+func main2() {
 	whost := os.Getenv("POSEIDON_WORKER_HOST")
 	wport, _ := strconv.Atoi(os.Getenv("POSEIDON_WORKER_PORT"))
 	mhost := os.Getenv("POSEIDON_MANAGER_HOST")
