@@ -6,52 +6,8 @@ import (
 	"strconv"
 
 	"github.com/MHS-20/poseidon/manager"
-	"github.com/MHS-20/poseidon/task"
 	"github.com/MHS-20/poseidon/worker"
-	"github.com/docker/docker/client"
-
-	"github.com/golang-collections/collections/queue"
-	"github.com/google/uuid"
 )
-
-func createContainer() (*task.Docker, *task.DockerResult) {
-	c := task.Config{
-		Name:  "test-container-1",
-		Image: "postgres:13",
-		Env: []string{
-			"POSTGRES_USER=poseidon",
-			"POSTGRES_PASSWORD=poseidon",
-		},
-	}
-
-	dc, _ := client.NewClientWithOpts(client.FromEnv)
-	d := task.Docker{
-		Client: dc,
-		Config: c,
-	}
-
-	result := d.Run()
-	if result.Error != nil {
-		fmt.Printf("%v\n", result.Error)
-		return nil, nil
-	}
-
-	fmt.Printf(
-		"Container %s is running with config %v\n", result.ContainerId, c)
-	return &d, &result
-}
-
-func stopContainer(d *task.Docker, id string) *task.DockerResult {
-	result := d.Stop(id)
-	if result.Error != nil {
-		fmt.Printf("%v\n", result.Error)
-		return nil
-	}
-
-	fmt.Printf(
-		"Container %s has been stopped and removed\n", result.ContainerId)
-	return &result
-}
 
 func main() {
 	whost := os.Getenv("POSEIDON_WORKER_HOST")
@@ -60,24 +16,12 @@ func main() {
 	mport, _ := strconv.Atoi(os.Getenv("POSEIDON_MANAGER_PORT"))
 
 	fmt.Println("Starting Poseidon worker")
-
-	w1 := worker.Worker{
-		Queue: *queue.New(),
-		Db:    make(map[uuid.UUID]*task.Task),
-	}
-	wapi1 := worker.Api{Address: whost, Port: wport, Worker: &w1}
-
-	w2 := worker.Worker{
-		Queue: *queue.New(),
-		Db:    make(map[uuid.UUID]*task.Task),
-	}
-	wapi2 := worker.Api{Address: whost, Port: wport + 1, Worker: &w2}
-
-	w3 := worker.Worker{
-		Queue: *queue.New(),
-		Db:    make(map[uuid.UUID]*task.Task),
-	}
-	wapi3 := worker.Api{Address: whost, Port: wport + 2, Worker: &w3}
+	w1 := worker.New("worker-1", "memory")
+	w2 := worker.New("worker-2", "memory")
+	w3 := worker.New("worker-3", "memory")
+	wapi1 := worker.Api{Address: whost, Port: wport, Worker: w1}
+	wapi2 := worker.Api{Address: whost, Port: wport + 1, Worker: w2}
+	wapi3 := worker.Api{Address: whost, Port: wport + 2, Worker: w3}
 
 	go w1.RunTasks()
 	go w1.UpdateTasks()
