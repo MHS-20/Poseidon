@@ -22,7 +22,7 @@ func init() {
 var workerCmd = &cobra.Command{
 	Use:   "worker",
 	Short: "Worker command to operate a Poseidon worker node.",
-	Long: `cube worker command.
+	Long: `poseidon worker command.
 
 The worker runs tasks and responds to the manager's requests about task state.`,
 	Run: func(cmd *cobra.Command, args []string) {

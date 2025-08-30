@@ -16,7 +16,7 @@ func init() {
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop a running task.",
-	Long: `cube stop command.
+	Long: `poseidon stop command.
 
 The stop command stops a running task.`,
 	Args: cobra.MinimumNArgs(1),

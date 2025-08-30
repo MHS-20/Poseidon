@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/MHS-20/poseidon/manager"
 	"log"
+
+	"github.com/MHS-20/poseidon/manager"
 
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ func init() {
 
 var managerCmd = &cobra.Command{
 	Use:   "manager",
-	Short: "Manager command to operate a Cube manager node.",
+	Short: "Manager command to operate a Poseidon manager node.",
 	Long: `poseidon manager command.
 
 The manager controls the orchestration system and is responsible for:
