@@ -39,6 +39,7 @@ Container Orchestrator from scratch
 | High availability                               | ❌     |
 | Load balancer                                   | ❌     |
 | Security                                        | ❌     |
+
 <br/><br>
 
 ## CLI
