@@ -21,26 +21,26 @@ Container Orchestrator from scratch
 <br/><br>
 
 ### Features
-- Starting, stopping, deleting docker containers
-- Starting, stopping, deleting tasks
-- Checking validity of state transitions
-- Collecting and exposing tasks' metrics
-- Worker API (task submission, task list, task deletion)
-- Manager control loop
-- Scheduling tasks on workers (RoundRobin, E-PVM)
-- Task Health Checks and Restart Policies
-- Manager API (task submission, task list, task deletion)
-- Persistent storage (BoltDB)
-- CLI 
+| Feature                                         | Status |
+|-------------------------------------------------|--------|
+| Starting, stopping, deleting docker containers  | ✔️     |
+| Starting, stopping, deleting tasks              | ✔️     |
+| Checking validity of state transitions          | ✔️     |
+| Collecting and exposing tasks' metrics          | ✔️     |
+| Worker API (task submission, task list, task deletion) | ✔️ |
+| Manager control loop                            | ✔️     |
+| Scheduling tasks on workers (RoundRobin, E-PVM) | ✔️     |
+| Task Health Checks and Restart Policies         | ✔️     |
+| Manager API (task submission, task list, task deletion) | ✔️ |
+| Persistent storage (BoltDB)                     | ✔️     |
+| CLI                                             | ✔️     |
+| Service Discovery                               | ❌     |
+| High availability                               | ❌     |
+| Load balancer                                   | ❌     |
+| Security                                        | ❌     |
 
-### What's missing
-- Service Discovery
-- High availability
-- Load balancer
-- Security
 
 ## CLI
-
 Start the manager
 ```
 go run main.go manager
@@ -69,4 +69,32 @@ go run main.go stop <task_id>
 Get node information:
 ```
 go run main.go node
+```
+
+
+## API
+
+Manager API: 
+```
++---------+-------------------+--------------------------------------------+
+| Method  | Route             | Description                                |
++---------+-------------------+--------------------------------------------+
+| GET     | /tasks            | Gets a list of all tasks                   |
+| POST    | /tasks            | Creates a task                             |
+| DELETE  | /tasks/{taskID}   | Stops the task identified by taskID        |
+| GET     | /nodes            | Gets a list of nodes                       |
++---------+-------------------+--------------------------------------------+
+```
+
+Worker API: 
+```
++--------+-------------------+--------------------------------------------+
+| Method | Route             | Description                                |
++--------+-------------------+--------------------------------------------+
+| GET    | /tasks            | Gets a list of all tasks                   |
+| POST   | /tasks            | Creates a task                             |
+| DELETE | /tasks/{taskID}   | Stops the task identified by taskID        |
+| GET    | /stats            | Gets metrics about the worker              |
++--------+-------------------+--------------------------------------------+
+
 ```
