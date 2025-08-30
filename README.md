@@ -30,10 +30,43 @@ Container Orchestrator from scratch
 - Scheduling tasks on workers (RoundRobin, E-PVM)
 - Task Health Checks and Restart Policies
 - Manager API (task submission, task list, task deletion)
-
+- Persistent storage (BoltDB)
+- CLI 
 
 ### What's missing
 - Service Discovery
 - High availability
 - Load balancer
 - Security
+
+## CLI
+
+Start the manager
+```
+go run main.go manager
+```
+
+Start a worker
+```
+go run main.go worker
+  ```
+
+Run a new task:
+```
+go run main.go task  --filename data/task1.json
+```
+
+Check tasks status:
+```
+go run main.go status
+```
+
+Stop a task:
+```
+go run main.go stop <task_id>
+```
+
+Get node information:
+```
+go run main.go node
+```
