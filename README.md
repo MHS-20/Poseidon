@@ -10,6 +10,7 @@ Container Orchestrator from scratch
 - **Networking**: `chi`
 - **Data Storage**: `BoltDB`
 - **Metrics**: `goprocinfo`
+- **CLI**: `Cobra`
 <br/><br>
 
 ### Core Components
@@ -20,7 +21,7 @@ Container Orchestrator from scratch
 5) **CLI**: command-line interface for users to interact with the orchestrator, submit tasks, and check status.
 <br/><br>
 
-### Features
+## Features
 | Feature                                         | Status |
 |-------------------------------------------------|--------|
 | Starting, stopping, deleting docker containers  | ✔️     |
@@ -38,7 +39,7 @@ Container Orchestrator from scratch
 | High availability                               | ❌     |
 | Load balancer                                   | ❌     |
 | Security                                        | ❌     |
-
+<br/><br>
 
 ## CLI
 Start the manager
