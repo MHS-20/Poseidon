@@ -1,0 +1,8 @@
++--------+-------------------+--------------------------------------------+
+| Method | Route             | Description                                |
++--------+-------------------+--------------------------------------------+
+| GET    | /tasks            | Gets a list of all tasks                   |
+| POST   | /tasks            | Creates a task                             |
+| DELETE | /tasks/{taskID}   | Stops the task identified by taskID        |
+| GET    | /stats            | Gets metrics about the worker              |
++--------+-------------------+--------------------------------------------+

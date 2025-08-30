@@ -1,0 +1,9 @@
++--------------+---------------+--------------+
+| CurrentState | Event         | NextState    |
++--------------+---------------+--------------+
+| Pending      | ScheduleEvent | Scheduled    |
+| Pending      | ScheduleEvent | Failed       |
+| Scheduled    | StartTask     | Running      |
+| Scheduled    | StartTask     | Failed       |
+| Running      | StopTask      | Completed    |
++--------------+---------------+--------------+
