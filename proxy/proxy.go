@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log"
 	"net"
@@ -14,16 +13,12 @@ import (
 	"time"
 
 	"github.com/MHS-20/Zodiac/kvclient"
-)
-
-const (
-	kTaskPrefix         = "/poseidon/tasks/"
-	kMappingPrefix      = "/poseidon/mappings/task-worker/"
-	kTaskIPPrefix       = "/poseidon/vips/ips/"
+	"github.com/MHS-20/poseidon/registry"
 )
 
 type Proxy struct {
 	client    *kvclient.KVClient
+	registry  *registry.Registry
 	listeners map[string]net.Listener
 	mu        sync.Mutex
 	closeCh   chan struct{}
@@ -33,17 +28,18 @@ type Proxy struct {
 func New(client *kvclient.KVClient) *Proxy {
 	return &Proxy{
 		client:    client,
+		registry:  registry.New(client),
 		listeners: make(map[string]net.Listener),
 		closeCh:   make(chan struct{}),
 	}
 }
 
 func (p *Proxy) Start(ctx context.Context) {
-	log.Println("Proxy: starting allocation watcher")
+	log.Println("Proxy: starting registry watcher")
+	p.syncFromRegistry(ctx)
+
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-
-	p.syncAllocations(ctx)
 
 	for {
 		select {
@@ -52,96 +48,67 @@ func (p *Proxy) Start(ctx context.Context) {
 			p.shutdown()
 			return
 		case <-ticker.C:
-			p.syncAllocations(ctx)
+			p.syncFromRegistry(ctx)
 		}
 	}
 }
 
-func (p *Proxy) syncAllocations(ctx context.Context) {
-	pairs, _, err := p.client.List(ctx, kTaskIPPrefix)
+func (p *Proxy) syncFromRegistry(ctx context.Context) {
+	services, err := p.registry.ListServices()
 	if err != nil {
-		log.Printf("Proxy: error listing VIP allocations: %v", err)
+		log.Printf("Proxy: error listing registry: %v", err)
 		return
 	}
 
-	current := make(map[string]string)
-	for ip, taskID := range pairs {
-		current[ip] = taskID
-	}
-
 	p.mu.Lock()
-	for ip, taskID := range current {
-		key := ip
-		if _, ok := p.listeners[key]; !ok {
-			go p.startTaskProxy(ctx, ip, taskID, key)
+	defer p.mu.Unlock()
+
+	current := make(map[string]registry.ServiceInstance)
+	for _, instances := range services {
+		for _, inst := range instances {
+			if !inst.Healthy || inst.VirtualIP == "" {
+				continue
+			}
+			current[inst.VirtualIP] = inst
 		}
 	}
+
+	for ip, inst := range current {
+		key := ip
+		if _, ok := p.listeners[key]; !ok {
+			go p.startListeners(inst)
+		}
+	}
+
 	for key := range p.listeners {
 		ip := strings.SplitN(key, ":", 2)[0]
 		if _, ok := current[ip]; !ok {
 			p.closeListener(key)
 		}
 	}
-	p.mu.Unlock()
 }
 
-func (p *Proxy) startTaskProxy(ctx context.Context, ip, taskID, key string) {
-	taskData, found, _, err := p.client.Get(ctx, kTaskPrefix+taskID)
-	if err != nil || !found {
-		log.Printf("Proxy: task %s not found: %v", taskID, err)
-		return
-	}
+func (p *Proxy) startListeners(inst registry.ServiceInstance) {
+	for _, port := range inst.Ports {
+		listenAddr := net.JoinHostPort(inst.VirtualIP, strconv.Itoa(port.ServicePort))
 
-	var task struct {
-		Ports     []struct {
-			ServicePort   int    `json:"ServicePort"`
-			ContainerPort int    `json:"ContainerPort"`
-			Protocol      string `json:"Protocol"`
-		} `json:"Ports"`
-		HostPorts map[string][]struct {
-			HostIP   string `json:"HostIp"`
-			HostPort string `json:"HostPort"`
-		} `json:"HostPorts"`
-	}
-	if err := json.Unmarshal([]byte(taskData), &task); err != nil {
-		log.Printf("Proxy: error decoding task %s: %v", taskID, err)
-		return
-	}
+		workerHost := strings.SplitN(inst.Worker, ":", 2)[0]
+		targetAddr := net.JoinHostPort(workerHost, strconv.Itoa(port.ServicePort))
 
-	workerAddr, _, _, err := p.client.Get(ctx, kMappingPrefix+taskID)
-	if err != nil {
-		log.Printf("Proxy: worker mapping for task %s not found: %v", taskID, err)
-		return
-	}
-	workerHost := strings.SplitN(workerAddr, ":", 2)[0]
+		existingKey, _, _ := net.SplitHostPort(listenAddr)
+		_ = existingKey
+		key := listenAddr
 
-	for _, port := range task.Ports {
-		if port.Protocol == "" {
-			port.Protocol = "tcp"
-		}
-		hostPort := lookupHostPort(task.HostPorts, port.ContainerPort)
-		if hostPort == "" {
-			log.Printf("Proxy: no host port for container port %d (task %s)", port.ContainerPort, taskID)
+		p.mu.Lock()
+		if _, ok := p.listeners[key]; ok {
+			p.mu.Unlock()
 			continue
 		}
-		key := net.JoinHostPort(ip, strconv.Itoa(port.ServicePort))
-		p.addIP(ip)
-		go p.listenAndProxy(key, net.JoinHostPort(workerHost, hostPort), port.Protocol)
-	}
-}
+		p.mu.Unlock()
 
-func lookupHostPort(hostPorts map[string][]struct {
-	HostIP   string `json:"HostIp"`
-	HostPort string `json:"HostPort"`
-}, containerPort int) string {
-	for key, bindings := range hostPorts {
-		if strings.HasPrefix(key, strconv.Itoa(containerPort)+"/") || strings.HasPrefix(key, strconv.Itoa(containerPort)) {
-			if len(bindings) > 0 {
-				return bindings[0].HostPort
-			}
-		}
+		p.addIP(inst.VirtualIP)
+		go p.listenAndProxy(listenAddr, targetAddr, port.Protocol)
 	}
-	return ""
 }
 
 func (p *Proxy) listenAndProxy(listenAddr, targetAddr, protocol string) {

@@ -16,6 +16,7 @@ import (
 	"github.com/MHS-20/Zodiac/kvclient"
 	"github.com/MHS-20/poseidon/network"
 	"github.com/MHS-20/poseidon/node"
+	"github.com/MHS-20/poseidon/registry"
 	"github.com/MHS-20/poseidon/scheduler"
 	"github.com/MHS-20/poseidon/store"
 	"github.com/MHS-20/poseidon/task"
@@ -44,6 +45,7 @@ type Manager struct {
 	kvClient      *kvclient.KVClient
 	isLeader      func() bool
 	VIPPool       *network.Pool
+	Registry      *registry.Registry
 }
 
 func (m *Manager) IsLeader() bool {
@@ -121,6 +123,10 @@ func New(workers []string, schedulerType string, dbType string, kvClient *kvclie
 		kvClient:      kvClient,
 		isLeader:      isLeader,
 		VIPPool:       vipPool,
+	}
+
+	if kvClient != nil {
+		m.Registry = registry.New(kvClient)
 	}
 
 	if isLeader == nil {
@@ -418,6 +424,8 @@ func (m *Manager) updateTasks() {
 				continue
 			}
 
+			prevState := taskPersisted.State
+
 			if taskPersisted.State != t.State {
 				taskPersisted.State = t.State
 			}
@@ -427,6 +435,8 @@ func (m *Manager) updateTasks() {
 			taskPersisted.ContainerID = t.ContainerID
 			taskPersisted.HostPorts = t.HostPorts
 			m.TaskDb.Put(taskPersisted.ID.String(), taskPersisted)
+
+			m.syncRegistry(taskPersisted, prevState)
 		}
 
 	}
@@ -479,12 +489,52 @@ func (m *Manager) doHealthChecks() {
 		if t.State == task.Running && t.RestartCount < 3 {
 			err := m.checkTaskHealth(*t)
 			if err != nil {
+				if m.Registry != nil {
+					m.Registry.SetHealth(t.ID, false)
+				}
 				if t.RestartCount < 3 {
 					m.restartTask(t)
+				}
+			} else {
+				if m.Registry != nil && t.VirtualIP != "" {
+					m.Registry.SetHealth(t.ID, true)
 				}
 			}
 		} else if t.State == task.Failed && t.RestartCount < 3 {
 			m.restartTask(t)
+		}
+	}
+}
+
+func (m *Manager) syncRegistry(t *task.Task, prevState task.State) {
+	if m.Registry == nil || m.kvClient == nil {
+		return
+	}
+
+	switch t.State {
+	case task.Running:
+		if prevState != task.Running && t.VirtualIP != "" {
+			workerHost := strings.SplitN(m.TaskWorkerMap[t.ID], ":", 2)[0]
+			inst := registry.ServiceInstance{
+				ID:         t.ID,
+				Name:       t.Name,
+				VirtualIP:  t.VirtualIP,
+				Ports:      t.Ports,
+				Worker:     m.TaskWorkerMap[t.ID],
+				WorkerHost: workerHost,
+				Status:     "Running",
+				Healthy:    true,
+			}
+			if err := m.Registry.Register(inst); err != nil {
+				log.Printf("error registering service %s: %v", t.ID, err)
+			}
+		}
+
+	case task.Completed, task.Failed:
+		if prevState != task.Completed && prevState != task.Failed {
+			if err := m.Registry.Deregister(t.ID); err != nil {
+				log.Printf("error deregistering service %s: %v", t.ID, err)
+			}
 		}
 	}
 }

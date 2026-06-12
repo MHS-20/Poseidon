@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	pdns "github.com/MHS-20/poseidon/dns"
 	"github.com/MHS-20/poseidon/manager"
 	"github.com/MHS-20/poseidon/network"
+	"github.com/MHS-20/poseidon/registry"
 	"github.com/MHS-20/poseidon/store"
 	"github.com/MHS-20/poseidon/task"
 	"github.com/google/uuid"
@@ -364,27 +366,26 @@ func TestE2E(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewPool: %v", err)
 		}
+		reg := registry.New(kvCli)
 
 		taskID := uuid.New()
-		taskData := task.Task{
-			ID:    taskID,
-			Name:  "my-service",
-			State: task.Running,
-			Image: "nginx:latest",
-		}
-		ts := store.NewRaftTaskStore(kvCli)
-		if err := ts.Put(taskID.String(), &taskData); err != nil {
-			t.Fatalf("store task: %v", err)
-		}
-
 		ip, err := pool.Allocate(taskID)
 		if err != nil {
 			t.Fatalf("pool allocate: %v", err)
 		}
 
-		taskData.VirtualIP = ip.String()
-		if err := ts.Put(taskID.String(), &taskData); err != nil {
-			t.Fatalf("store task with VIP: %v", err)
+		inst := registry.ServiceInstance{
+			ID:         taskID,
+			Name:       "my-service",
+			VirtualIP:  ip.String(),
+			Ports:      []task.PortMapping{{ServicePort: 80, ContainerPort: 8080, Protocol: "tcp"}},
+			Worker:     "10.0.0.1:5556",
+			WorkerHost: "10.0.0.1",
+			Status:     "Running",
+			Healthy:    true,
+		}
+		if err := reg.Register(inst); err != nil {
+			t.Fatalf("register: %v", err)
 		}
 
 		dnsSrv := pdns.New(kvCli)
@@ -402,27 +403,152 @@ func TestE2E(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		defer dnsSrv.Stop()
 
-		m := new(dns.Msg)
-		m.SetQuestion("my-service.svc.poseidon.cluster.", dns.TypeA)
-		m.RecursionDesired = false
-
 		client := new(dns.Client)
-		resp, _, err := client.Exchange(m, realAddr)
+
+		// A record
+		t.Run("A", func(t *testing.T) {
+			m := new(dns.Msg)
+			m.SetQuestion("my-service.svc.poseidon.cluster.", dns.TypeA)
+			resp, _, err := client.Exchange(m, realAddr)
+			if err != nil {
+				t.Fatalf("DNS exchange: %v", err)
+			}
+			if resp.Rcode != dns.RcodeSuccess {
+				t.Fatalf("rcode = %v, want Success", resp.Rcode)
+			}
+			if len(resp.Answer) == 0 {
+				t.Fatal("no answer")
+			}
+			a, ok := resp.Answer[0].(*dns.A)
+			if !ok {
+				t.Fatalf("answer type = %T", resp.Answer[0])
+			}
+			if a.A.String() != ip.String() {
+				t.Errorf("resolved to %s, want %s", a.A, ip)
+			}
+		})
+
+		// SRV record
+		t.Run("SRV", func(t *testing.T) {
+			m := new(dns.Msg)
+			m.SetQuestion("my-service.svc.poseidon.cluster.", dns.TypeSRV)
+			resp, _, err := client.Exchange(m, realAddr)
+			if err != nil {
+				t.Fatalf("SRV exchange: %v", err)
+			}
+			if resp.Rcode != dns.RcodeSuccess {
+				t.Fatalf("SRV rcode = %v, want Success", resp.Rcode)
+			}
+			if len(resp.Answer) == 0 {
+				t.Fatal("no SRV answer")
+			}
+			srv, ok := resp.Answer[0].(*dns.SRV)
+			if !ok {
+				t.Fatalf("SRV answer type = %T", resp.Answer[0])
+			}
+			if srv.Port != 80 {
+				t.Errorf("SRV port = %d, want 80", srv.Port)
+			}
+		})
+
+		// PTR record
+		t.Run("PTR", func(t *testing.T) {
+			parts := strings.Split(ip.String(), ".")
+			ptrName := fmt.Sprintf("%s.%s.%s.%s.in-addr.arpa.", parts[3], parts[2], parts[1], parts[0])
+			m := new(dns.Msg)
+			m.SetQuestion(ptrName, dns.TypePTR)
+			resp, _, err := client.Exchange(m, realAddr)
+			if err != nil {
+				t.Fatalf("PTR exchange: %v", err)
+			}
+			if resp.Rcode != dns.RcodeSuccess {
+				t.Fatalf("PTR rcode = %v, want Success", resp.Rcode)
+			}
+			if len(resp.Answer) == 0 {
+				t.Fatal("no PTR answer")
+			}
+			ptr, ok := resp.Answer[0].(*dns.PTR)
+			if !ok {
+				t.Fatalf("PTR answer type = %T", resp.Answer[0])
+			}
+			if ptr.Ptr != "my-service.svc.poseidon.cluster." {
+				t.Errorf("PTR = %s, want my-service.svc.poseidon.cluster.", ptr.Ptr)
+			}
+		})
+	})
+
+	t.Run("RegistryServiceDiscovery", func(t *testing.T) {
+		kvCli := h.NewClient()
+		reg := registry.New(kvCli)
+
+		id1 := uuid.New()
+		web1 := registry.ServiceInstance{
+			ID:         id1,
+			Name:       "web",
+			VirtualIP:  "10.42.0.10",
+			Ports:      []task.PortMapping{{ServicePort: 80, ContainerPort: 8080, Protocol: "tcp"}},
+			Worker:     "10.0.0.1:5556",
+			WorkerHost: "10.0.0.1",
+			Status:     "Running",
+			Healthy:    true,
+		}
+		if err := reg.Register(web1); err != nil {
+			t.Fatalf("register web1: %v", err)
+		}
+
+		id2 := uuid.New()
+		web2 := registry.ServiceInstance{
+			ID:         id2,
+			Name:       "web",
+			VirtualIP:  "10.42.0.11",
+			Ports:      []task.PortMapping{{ServicePort: 80, ContainerPort: 8080, Protocol: "tcp"}},
+			Worker:     "10.0.0.2:5556",
+			WorkerHost: "10.0.0.2",
+			Status:     "Running",
+			Healthy:    true,
+		}
+		if err := reg.Register(web2); err != nil {
+			t.Fatalf("register web2: %v", err)
+		}
+
+		instances, err := reg.Lookup("web")
 		if err != nil {
-			t.Fatalf("DNS exchange: %v", err)
+			t.Fatalf("Lookup: %v", err)
 		}
-		if resp.Rcode != dns.RcodeSuccess {
-			t.Fatalf("DNS rcode = %v, want Success", resp.Rcode)
+		if len(instances) != 2 {
+			t.Fatalf("got %d instances, want 2", len(instances))
 		}
-		if len(resp.Answer) == 0 {
-			t.Fatal("no DNS answer")
+
+		healthy, err := reg.LookupHealthy("web")
+		if err != nil {
+			t.Fatalf("LookupHealthy: %v", err)
 		}
-		a, ok := resp.Answer[0].(*dns.A)
-		if !ok {
-			t.Fatalf("answer type = %T, want *dns.A", resp.Answer[0])
+		if len(healthy) != 2 {
+			t.Errorf("got %d healthy, want 2", len(healthy))
 		}
-		if a.A.String() != ip.String() {
-			t.Errorf("DNS resolved to %s, want %s", a.A, ip)
+
+		reg.SetHealth(id1, false)
+
+		healthy, err = reg.LookupHealthy("web")
+		if err != nil {
+			t.Fatalf("LookupHealthy after unhealthy: %v", err)
+		}
+		if len(healthy) != 1 {
+			t.Errorf("got %d healthy after set unhealthy, want 1", len(healthy))
+		}
+
+		services, err := reg.ListServices()
+		if err != nil {
+			t.Fatalf("ListServices: %v", err)
+		}
+		if _, ok := services["web"]; !ok {
+			t.Error("web service not found in ListServices")
+		}
+
+		reg.Deregister(id2)
+		instances, _ = reg.Lookup("web")
+		if len(instances) != 1 {
+			t.Errorf("got %d instances after deregister, want 1", len(instances))
 		}
 	})
 }

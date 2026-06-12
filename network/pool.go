@@ -58,24 +58,40 @@ func (p *Pool) indexToIP(idx int) net.IP {
 func (p *Pool) allocateIndex(ctx context.Context) (int, error) {
 	for {
 		val, found, _, err := p.client.Get(ctx, kVIPNextKey)
-		var current int
 		if err != nil {
 			return 0, fmt.Errorf("get next index: %w", err)
 		}
 		if !found {
-			current = 1
-		} else {
-			current, err = strconv.Atoi(val)
+			success, _, _, err := p.client.Txn(ctx,
+				[]api.TxnCondition{
+					{Key: kVIPNextKey, Compare: api.CompareNotExists},
+				},
+				[]api.TxnOp{
+					{Op: api.TxnOpPut, Key: kVIPNextKey, Value: "2"},
+				},
+				nil,
+			)
 			if err != nil {
-				return 0, fmt.Errorf("parse next index: %w", err)
+				continue
 			}
+			if success {
+				return 1, nil
+			}
+			continue
+		}
+		current, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, fmt.Errorf("parse next index: %w", err)
 		}
 		if current >= p.size {
 			return 0, fmt.Errorf("VIP pool exhausted (CIDR %s)", p.network.String())
 		}
 		nextVal := strconv.Itoa(current + 1)
-		_, _, _, err = p.client.CAS(ctx, kVIPNextKey, val, nextVal)
+		prevVal, keyFound, _, err := p.client.CAS(ctx, kVIPNextKey, val, nextVal)
 		if err != nil {
+			continue
+		}
+		if !keyFound || prevVal != val {
 			continue
 		}
 		return current, nil
