@@ -16,6 +16,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type PortMapping struct {
+	ServicePort   int
+	ContainerPort int
+	Protocol      string
+}
+
 type Task struct {
 	ID            uuid.UUID
 	ContainerID   string
@@ -33,6 +39,8 @@ type Task struct {
 	HealthCheck   string
 	RestartCount  int
 	HostPorts     nat.PortMap
+	VirtualIP     string
+	Ports         []PortMapping
 }
 
 type TaskEvent struct {

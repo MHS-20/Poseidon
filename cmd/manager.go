@@ -15,6 +15,7 @@ import (
 	"github.com/MHS-20/Zodiac/kvclient"
 	"github.com/MHS-20/Zodiac/kvservice"
 	"github.com/MHS-20/poseidon/manager"
+	"github.com/MHS-20/poseidon/network"
 
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,7 @@ func init() {
 	managerCmd.Flags().IntP("raft-port", "", 9001, "HTTP API port for the embedded Zodiac KV store")
 	managerCmd.Flags().StringP("data-dir", "", "/tmp/poseidon", "Directory for Raft log storage")
 	managerCmd.Flags().StringSliceP("raft-join", "", []string{}, "Existing cluster raft addresses to join (e.g. localhost:9001)")
+	managerCmd.Flags().StringP("service-cidr", "", "", "CIDR range for virtual IPs (e.g. 10.42.0.0/16)")
 }
 
 var managerCmd = &cobra.Command{
@@ -57,6 +59,7 @@ For a replicated setup, use --dbType raft along with --node-id, --raft-port,
 		raftPort, _ := cmd.Flags().GetInt("raft-port")
 		dataDir, _ := cmd.Flags().GetString("data-dir")
 		raftJoins, _ := cmd.Flags().GetStringSlice("raft-join")
+		serviceCIDR, _ := cmd.Flags().GetString("service-cidr")
 
 		var kvCli *kvclient.KVClient
 		isLeader := func() bool { return true }
@@ -103,8 +106,21 @@ For a replicated setup, use --dbType raft along with --node-id, --raft-port,
 			log.Printf("Manager is leader: %v", isLeader())
 		}
 
+		var vipPool *network.Pool
+		if serviceCIDR != "" {
+			if kvCli == nil {
+				log.Fatal("--service-cidr requires a raft-based KV store (--dbType raft)")
+			}
+			var poolErr error
+			vipPool, poolErr = network.NewPool(kvCli, serviceCIDR)
+			if poolErr != nil {
+				log.Fatalf("error creating VIP pool: %v", poolErr)
+			}
+			log.Printf("VIP pool initialized with CIDR %s", serviceCIDR)
+		}
+
 		log.Println("Starting manager.")
-		m := manager.New(workers, scheduler, dbType, kvCli, isLeader)
+		m := manager.New(workers, scheduler, dbType, kvCli, isLeader, vipPool)
 		api := manager.Api{Address: host, Port: port, Manager: m}
 		go m.ProcessTasks()
 		go m.UpdateTasks()

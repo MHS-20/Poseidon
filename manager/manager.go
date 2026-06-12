@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MHS-20/Zodiac/api"
 	"github.com/MHS-20/Zodiac/kvclient"
+	"github.com/MHS-20/poseidon/network"
 	"github.com/MHS-20/poseidon/node"
 	"github.com/MHS-20/poseidon/scheduler"
 	"github.com/MHS-20/poseidon/store"
@@ -41,6 +43,7 @@ type Manager struct {
 	Scheduler     scheduler.Scheduler
 	kvClient      *kvclient.KVClient
 	isLeader      func() bool
+	VIPPool       *network.Pool
 }
 
 func (m *Manager) IsLeader() bool {
@@ -83,7 +86,7 @@ func getHostPort(ports nat.PortMap) *string {
 	return nil
 }
 
-func New(workers []string, schedulerType string, dbType string, kvClient *kvclient.KVClient, isLeader func() bool) *Manager {
+func New(workers []string, schedulerType string, dbType string, kvClient *kvclient.KVClient, isLeader func() bool, vipPool *network.Pool) *Manager {
 	workerTaskMap := make(map[string][]uuid.UUID)
 	taskWorkerMap := make(map[uuid.UUID]string)
 
@@ -117,6 +120,7 @@ func New(workers []string, schedulerType string, dbType string, kvClient *kvclie
 		Scheduler:     s,
 		kvClient:      kvClient,
 		isLeader:      isLeader,
+		VIPPool:       vipPool,
 	}
 
 	if isLeader == nil {
@@ -326,6 +330,17 @@ func (m *Manager) SendWork() {
 		m.TaskWorkerMap[t.ID] = w.Name
 		m.saveMapping(t.ID, w.Name)
 
+		if m.VIPPool != nil && len(t.ExposedPorts) > 0 && t.VirtualIP == "" {
+			vip, err := m.VIPPool.Allocate(t.ID)
+			if err != nil {
+				log.Printf("error allocating VIP for task %s: %v", t.ID, err)
+			} else {
+				t.VirtualIP = vip.String()
+				t.Ports = buildPortMappings(t.ExposedPorts, t.PortBindings)
+				log.Printf("allocated VIP %s for task %s", t.VirtualIP, t.ID)
+			}
+		}
+
 		t.State = task.Scheduled
 		m.TaskDb.Put(t.ID.String(), &t)
 
@@ -472,6 +487,28 @@ func (m *Manager) doHealthChecks() {
 			m.restartTask(t)
 		}
 	}
+}
+
+func buildPortMappings(exposedPorts nat.PortSet, portBindings map[string]string) []task.PortMapping {
+	var ports []task.PortMapping
+	for p := range exposedPorts {
+		pm := task.PortMapping{
+			ContainerPort: p.Int(),
+			Protocol:      p.Proto(),
+		}
+		if bindTo, ok := portBindings[p.Port()]; ok {
+			servicePort, err := strconv.Atoi(bindTo)
+			if err == nil {
+				pm.ServicePort = servicePort
+			} else {
+				pm.ServicePort = pm.ContainerPort
+			}
+		} else {
+			pm.ServicePort = pm.ContainerPort
+		}
+		ports = append(ports, pm)
+	}
+	return ports
 }
 
 func (m *Manager) restartTask(t *task.Task) {

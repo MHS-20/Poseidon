@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,10 +12,13 @@ import (
 	"time"
 
 	"github.com/MHS-20/Zodiac/test"
+	pdns "github.com/MHS-20/poseidon/dns"
 	"github.com/MHS-20/poseidon/manager"
+	"github.com/MHS-20/poseidon/network"
 	"github.com/MHS-20/poseidon/store"
 	"github.com/MHS-20/poseidon/task"
 	"github.com/google/uuid"
+	"github.com/miekg/dns"
 )
 
 // ---------------------------------------------------------------------------
@@ -165,6 +169,7 @@ func TestE2E(t *testing.T) {
 			"raft",
 			kvAll,
 			func() bool { return true },
+			nil,
 		)
 
 		taskID := uuid.New()
@@ -306,6 +311,118 @@ func TestE2E(t *testing.T) {
 			t.Errorf("no pending tasks visible after leader change")
 		} else {
 			t.Logf("New leader sees %d pending task(s)", len(pairs))
+		}
+	})
+
+	t.Run("VIPPoolAllocation", func(t *testing.T) {
+		kvCli := h.NewClient()
+		pool, err := network.NewPool(kvCli, "10.42.0.0/24")
+		if err != nil {
+			t.Fatalf("NewPool: %v", err)
+		}
+
+		taskID := uuid.New()
+		ip, err := pool.Allocate(taskID)
+		if err != nil {
+			t.Fatalf("Allocate: %v", err)
+		}
+		if ip == nil || ip.String() != "10.42.0.1" {
+			t.Errorf("got IP %v, want 10.42.0.1", ip)
+		}
+
+		got, err := pool.GetVIP(taskID)
+		if err != nil {
+			t.Fatalf("GetVIP: %v", err)
+		}
+		if got.String() != ip.String() {
+			t.Errorf("GetVIP = %s, want %s", got, ip)
+		}
+
+		allocations, err := pool.ListAllocations()
+		if err != nil {
+			t.Fatalf("ListAllocations: %v", err)
+		}
+		found := false
+		for _, v := range allocations {
+			if v == taskID.String() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("task not found in allocations")
+		}
+
+		if err := pool.Release(taskID); err != nil {
+			t.Fatalf("Release: %v", err)
+		}
+	})
+
+	t.Run("DNSServiceDiscovery", func(t *testing.T) {
+		kvCli := h.NewClient()
+		pool, err := network.NewPool(kvCli, "10.42.0.0/24")
+		if err != nil {
+			t.Fatalf("NewPool: %v", err)
+		}
+
+		taskID := uuid.New()
+		taskData := task.Task{
+			ID:    taskID,
+			Name:  "my-service",
+			State: task.Running,
+			Image: "nginx:latest",
+		}
+		ts := store.NewRaftTaskStore(kvCli)
+		if err := ts.Put(taskID.String(), &taskData); err != nil {
+			t.Fatalf("store task: %v", err)
+		}
+
+		ip, err := pool.Allocate(taskID)
+		if err != nil {
+			t.Fatalf("pool allocate: %v", err)
+		}
+
+		taskData.VirtualIP = ip.String()
+		if err := ts.Put(taskID.String(), &taskData); err != nil {
+			t.Fatalf("store task with VIP: %v", err)
+		}
+
+		dnsSrv := pdns.New(kvCli)
+		dnsAddr := "127.0.0.1:0"
+		lis, err := net.ListenPacket("udp", dnsAddr)
+		if err != nil {
+			t.Fatalf("listen for DNS: %v", err)
+		}
+		realAddr := lis.LocalAddr().String()
+		lis.Close()
+
+		go func() {
+			dnsSrv.Start(realAddr)
+		}()
+		time.Sleep(100 * time.Millisecond)
+		defer dnsSrv.Stop()
+
+		m := new(dns.Msg)
+		m.SetQuestion("my-service.svc.poseidon.cluster.", dns.TypeA)
+		m.RecursionDesired = false
+
+		client := new(dns.Client)
+		resp, _, err := client.Exchange(m, realAddr)
+		if err != nil {
+			t.Fatalf("DNS exchange: %v", err)
+		}
+		if resp.Rcode != dns.RcodeSuccess {
+			t.Fatalf("DNS rcode = %v, want Success", resp.Rcode)
+		}
+		if len(resp.Answer) == 0 {
+			t.Fatal("no DNS answer")
+		}
+		a, ok := resp.Answer[0].(*dns.A)
+		if !ok {
+			t.Fatalf("answer type = %T, want *dns.A", resp.Answer[0])
+		}
+		if a.A.String() != ip.String() {
+			t.Errorf("DNS resolved to %s, want %s", a.A, ip)
 		}
 	})
 }
