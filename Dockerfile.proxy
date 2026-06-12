@@ -1,0 +1,11 @@
+FROM golang:1.23-alpine AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /build/poseidon-proxy ./cmd/proxy
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /build/poseidon-proxy /usr/local/bin/poseidon-proxy
+ENTRYPOINT ["poseidon-proxy"]

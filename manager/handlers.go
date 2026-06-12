@@ -5,12 +5,19 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MHS-20/poseidon/task"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
+
+const systemTaskPrefix = "poseidon-"
+
+func isSystemTask(name string) bool {
+	return strings.HasPrefix(name, systemTaskPrefix)
+}
 
 func (a *Api) GetTasksHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -36,6 +43,14 @@ func (a *Api) StartTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isSystemTask(te.Task.Name) {
+		msg := fmt.Sprintf("cannot create system task %q via user API", te.Task.Name)
+		log.Print(msg)
+		w.WriteHeader(403)
+		json.NewEncoder(w).Encode(ErrResponse{HTTPStatusCode: 403, Message: msg})
+		return
+	}
+
 	a.Manager.AddTask(te)
 	log.Printf("Added task %v\n", te.Task.ID)
 	w.WriteHeader(201)
@@ -56,13 +71,22 @@ func (a *Api) StopTaskHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 	}
 
+	taskCopy := taskToStop.(*task.Task)
+
+	if isSystemTask(taskCopy.Name) {
+		msg := fmt.Sprintf("cannot stop system task %q via user API", taskCopy.Name)
+		log.Print(msg)
+		w.WriteHeader(403)
+		json.NewEncoder(w).Encode(ErrResponse{HTTPStatusCode: 403, Message: msg})
+		return
+	}
+
 	te := task.TaskEvent{
 		ID:        uuid.New(),
 		State:     task.Completed,
 		Timestamp: time.Now(),
 	}
 
-	taskCopy := taskToStop.(*task.Task)
 	taskCopy.State = task.Completed
 	te.Task = *taskCopy
 	a.Manager.AddTask(te)

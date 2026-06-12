@@ -1,0 +1,11 @@
+{
+    "name": "poseidon-proxy",
+    "image": "poseidon-proxy:latest",
+    "restartPolicy": "always",
+    "env": {
+        "POSEIDON_RAFT_ADDR": "host.docker.internal:9001"
+    },
+    "networkMode": "host",
+    "cpus": 0.1,
+    "memory": 67108864
+}

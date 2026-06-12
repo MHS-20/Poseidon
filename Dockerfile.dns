@@ -1,0 +1,12 @@
+FROM golang:1.23-alpine AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /build/poseidon-dns ./cmd/dns
+
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates
+COPY --from=builder /build/poseidon-dns /usr/local/bin/poseidon-dns
+EXPOSE 53/udp
+ENTRYPOINT ["poseidon-dns"]

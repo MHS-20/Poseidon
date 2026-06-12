@@ -1,0 +1,14 @@
+{
+    "name": "poseidon-worker",
+    "image": "poseidon-worker:latest",
+    "restartPolicy": "always",
+    "ports": [
+        { "containerPort": 5556, "protocol": "tcp" }
+    ],
+    "env": {
+        "POSEIDON_WORKER_PORT": "5556",
+        "POSEIDON_WORKER_DBTYPE": "memory"
+    },
+    "cpus": 0.25,
+    "memory": 134217728
+}
