@@ -2,6 +2,7 @@ package manager
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MHS-20/Zodiac/api"
+	"github.com/MHS-20/Zodiac/kvclient"
 	"github.com/MHS-20/poseidon/node"
 	"github.com/MHS-20/poseidon/scheduler"
 	"github.com/MHS-20/poseidon/store"
@@ -17,12 +20,17 @@ import (
 	"github.com/MHS-20/poseidon/worker"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/golang-collections/collections/queue"
 	"github.com/google/uuid"
 )
 
+const (
+	kPendingPrefix = "/poseidon/tasks/pending/"
+	kTaskPrefix    = "/poseidon/tasks/"
+	kEventPrefix   = "/poseidon/events/"
+	kMappingPrefix = "/poseidon/mappings/task-worker/"
+)
+
 type Manager struct {
-	Pending       queue.Queue
 	TaskDb        store.Store
 	EventDb       store.Store
 	Workers       []string
@@ -31,10 +39,29 @@ type Manager struct {
 	TaskWorkerMap map[uuid.UUID]string
 	WorkerNodes   []*node.Node
 	Scheduler     scheduler.Scheduler
+	kvClient      *kvclient.KVClient
+	isLeader      func() bool
+}
+
+func (m *Manager) IsLeader() bool {
+	return m.isLeader()
 }
 
 func (m *Manager) AddTask(te task.TaskEvent) {
-	m.Pending.Enqueue(te)
+	if m.kvClient != nil {
+		data, err := json.Marshal(te)
+		if err != nil {
+			log.Printf("error marshaling task event: %v\n", err)
+			return
+		}
+		_, _, _, err = m.kvClient.Put(context.Background(), kPendingPrefix+te.ID.String(), string(data))
+		if err != nil {
+			log.Printf("error storing pending task %s: %v\n", te.ID.String(), err)
+		}
+	} else {
+		log.Printf("AddTask called without kvClient (task %s will not be persisted)\n", te.ID)
+	}
+	_ = m.EventDb.Put(te.ID.String(), &te)
 }
 
 func (m *Manager) GetTasks() []*task.Task {
@@ -43,17 +70,20 @@ func (m *Manager) GetTasks() []*task.Task {
 		log.Printf("error getting list of tasks: %v\n", err)
 		return nil
 	}
-	return taskList.([]*task.Task)
+	if list, ok := taskList.([]*task.Task); ok {
+		return list
+	}
+	return nil
 }
 
 func getHostPort(ports nat.PortMap) *string {
-	for k, _ := range ports {
+	for k := range ports {
 		return &ports[k][0].HostPort
 	}
 	return nil
 }
 
-func New(workers []string, schedulerType string, dbType string) *Manager {
+func New(workers []string, schedulerType string, dbType string, kvClient *kvclient.KVClient, isLeader func() bool) *Manager {
 	workerTaskMap := make(map[string][]uuid.UUID)
 	taskWorkerMap := make(map[uuid.UUID]string)
 
@@ -80,12 +110,17 @@ func New(workers []string, schedulerType string, dbType string) *Manager {
 	}
 
 	m := Manager{
-		Pending:       *queue.New(),
 		Workers:       workers,
 		WorkerTaskMap: workerTaskMap,
 		TaskWorkerMap: taskWorkerMap,
 		WorkerNodes:   nodes,
 		Scheduler:     s,
+		kvClient:      kvClient,
+		isLeader:      isLeader,
+	}
+
+	if isLeader == nil {
+		m.isLeader = func() bool { return true }
 	}
 
 	var err1, err2 error
@@ -98,6 +133,12 @@ func New(workers []string, schedulerType string, dbType string) *Manager {
 	case "persistent":
 		ts, err1 = store.NewTaskStore("tasks.db", 0600, "tasks")
 		es, err2 = store.NewEventStore("events.db", 0600, "events")
+	case "raft":
+		if kvClient == nil {
+			log.Fatal("raft dbType requires a non-nil kvClient")
+		}
+		ts = store.NewRaftTaskStore(kvClient)
+		es = store.NewRaftEventStore(kvClient)
 	}
 
 	if err1 != nil {
@@ -110,15 +151,57 @@ func New(workers []string, schedulerType string, dbType string) *Manager {
 
 	m.TaskDb = ts
 	m.EventDb = es
+
+	if kvClient != nil {
+		m.loadMappings()
+	}
+
 	return &m
 
 }
 
+func (m *Manager) loadMappings() {
+	if m.kvClient == nil {
+		return
+	}
+	ctx := context.Background()
+	pairs, _, err := m.kvClient.List(ctx, kMappingPrefix)
+	if err != nil {
+		log.Printf("error loading task-worker mappings: %v\n", err)
+		return
+	}
+	for key, workerName := range pairs {
+		taskIDStr := strings.TrimPrefix(key, kMappingPrefix)
+		if taskIDStr == "" {
+			continue
+		}
+		taskID, err := uuid.Parse(taskIDStr)
+		if err != nil {
+			continue
+		}
+		m.TaskWorkerMap[taskID] = workerName
+		m.WorkerTaskMap[workerName] = append(m.WorkerTaskMap[workerName], taskID)
+	}
+}
+
+func (m *Manager) saveMapping(taskID uuid.UUID, workerName string) {
+	if m.kvClient == nil {
+		return
+	}
+	ctx := context.Background()
+	_, _, _, err := m.kvClient.Put(ctx, kMappingPrefix+taskID.String(), workerName)
+	if err != nil {
+		log.Printf("error saving task-worker mapping for %s: %v\n", taskID.String(), err)
+	}
+}
+
 func (m *Manager) UpdateTasks() {
 	for {
-		log.Println("Checking for task updates from workers")
-		m.updateTasks()
-		log.Println("Task updates completed")
+		if m.isLeader() {
+			log.Println("Checking for task updates from workers")
+			m.updateTasks()
+			log.Println("Task updates completed")
+		}
 		log.Println("Sleeping for 15 seconds")
 		time.Sleep(15 * time.Second)
 	}
@@ -126,8 +209,10 @@ func (m *Manager) UpdateTasks() {
 
 func (m *Manager) ProcessTasks() {
 	for {
-		log.Println("Processing any tasks in the queue")
-		m.SendWork()
+		if m.isLeader() {
+			log.Println("Processing any tasks in the queue")
+			m.SendWork()
+		}
 		log.Println("Sleeping for 10 seconds")
 		time.Sleep(10 * time.Second)
 	}
@@ -167,10 +252,39 @@ func (m *Manager) stopTask(worker string, taskID string) {
 }
 
 func (m *Manager) SendWork() {
-	if m.Pending.Len() > 0 {
-		e := m.Pending.Dequeue()
-		te := e.(task.TaskEvent)
-		err := m.EventDb.Put(te.ID.String(), &te)
+	if m.kvClient == nil {
+		log.Println("SendWork: no kvClient configured, skipping")
+		return
+	}
+
+	ctx := context.Background()
+	pairs, _, err := m.kvClient.List(ctx, kPendingPrefix)
+	if err != nil {
+		log.Printf("error listing pending tasks: %v\n", err)
+		return
+	}
+	if len(pairs) == 0 {
+		log.Println("No work in the queue")
+		return
+	}
+
+	for key, val := range pairs {
+		succeeded, _, _, err := m.kvClient.Txn(ctx,
+			[]api.TxnCondition{{Key: key, Compare: api.CompareExists}},
+			[]api.TxnOp{{Op: api.TxnOpDelete, Key: key}},
+			nil,
+		)
+		if err != nil || !succeeded {
+			continue
+		}
+
+		var te task.TaskEvent
+		if err := json.Unmarshal([]byte(val), &te); err != nil {
+			log.Printf("error unmarshaling pending task event: %v\n", err)
+			continue
+		}
+
+		err = m.EventDb.Put(te.ID.String(), &te)
 		if err != nil {
 			log.Printf("error attempting to store task event %s: %s\n", te.ID.String(), err)
 		}
@@ -181,35 +295,36 @@ func (m *Manager) SendWork() {
 			result, err := m.TaskDb.Get(te.Task.ID.String())
 			if err != nil {
 				log.Printf("unable to schedule task: %s\n", err)
-				return
+				continue
 			}
 
 			persistedTask, ok := result.(*task.Task)
 			if !ok {
 				log.Printf("unable to convert task to task.Task type\n")
-				return
+				continue
 			}
 
 			if te.State == task.Completed && task.ValidStateTransition(persistedTask.State, te.State) {
 				m.stopTask(taskWorker, te.Task.ID.String())
-				return
+				continue
 			}
 
 			log.Printf("invalid request: existing task %s is in state %v and cannot transition to the completed state\n", persistedTask.ID.String(), persistedTask.State)
-			return
+			continue
 		}
 
 		t := te.Task
 		w, err := m.SelectWorker(t)
 		if err != nil {
 			log.Printf("error selecting worker for task %s: %v\n", t.ID, err)
-			return
+			continue
 		}
 
 		log.Printf("[manager] selected worker %s for task %s\n", w.Name, t.ID)
 
 		m.WorkerTaskMap[w.Name] = append(m.WorkerTaskMap[w.Name], te.Task.ID)
 		m.TaskWorkerMap[t.ID] = w.Name
+		m.saveMapping(t.ID, w.Name)
 
 		t.State = task.Scheduled
 		m.TaskDb.Put(t.ID.String(), &t)
@@ -217,14 +332,15 @@ func (m *Manager) SendWork() {
 		data, err := json.Marshal(te)
 		if err != nil {
 			log.Printf("Unable to marshal task object: %v.\n", t)
+			continue
 		}
 
 		url := fmt.Sprintf("http://%s/tasks", w.Name)
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("[manager] Error connecting to %v: %v\n", w, err)
-			m.Pending.Enqueue(t)
-			return
+			m.AddTask(te)
+			continue
 		}
 
 		d := json.NewDecoder(resp.Body)
@@ -233,22 +349,20 @@ func (m *Manager) SendWork() {
 			err := d.Decode(&e)
 			if err != nil {
 				fmt.Printf("Error decoding response: %s\n\n", err.Error())
-				return
+				continue
 			}
 			log.Printf("Response error (%d): %s\n", e.HTTPStatusCode, e.Message)
-			return
+			continue
 		}
 
 		t = task.Task{}
 		err = d.Decode(&t)
 		if err != nil {
 			fmt.Printf("Error decoding response: %s\n", err.Error())
-			return
+			continue
 		}
 		w.TaskCount++
 		log.Printf("[manager] received response from worker: %#v\n", t)
-	} else {
-		log.Println("No work in the queue")
 	}
 }
 
@@ -335,9 +449,11 @@ func (m *Manager) checkTaskHealth(t task.Task) error {
 
 func (m *Manager) DoHealthChecks() {
 	for {
-		log.Println("Performing task health check")
-		m.doHealthChecks()
-		log.Println("Task health checks completed")
+		if m.isLeader() {
+			log.Println("Performing task health check")
+			m.doHealthChecks()
+			log.Println("Task health checks completed")
+		}
 		log.Println("Sleeping for 60 seconds")
 		time.Sleep(60 * time.Second)
 	}
@@ -359,12 +475,9 @@ func (m *Manager) doHealthChecks() {
 }
 
 func (m *Manager) restartTask(t *task.Task) {
-	// Get the worker where the task was running
 	w := m.TaskWorkerMap[t.ID]
 	t.State = task.Scheduled
 	t.RestartCount++
-	// We need to overwrite the existing task to ensure it has
-	// the current state
 	m.TaskDb.Put(t.ID.String(), t)
 	te := task.TaskEvent{
 		ID:        uuid.New(),
@@ -382,7 +495,7 @@ func (m *Manager) restartTask(t *task.Task) {
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Error connecting to %v: %v\n", w, err)
-		m.Pending.Enqueue(t)
+		m.AddTask(te)
 		return
 	}
 
@@ -391,7 +504,7 @@ func (m *Manager) restartTask(t *task.Task) {
 		e := worker.ErrResponse{}
 		err := d.Decode(&e)
 		if err != nil {
-			fmt.Printf("Error decoding response: %s\n", err.Error())
+			fmt.Printf("Error decoding response: %s\n\n", err.Error())
 			return
 		}
 		log.Printf("Response error (%d): %s\n", e.HTTPStatusCode, e.Message)

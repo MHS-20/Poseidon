@@ -1,5 +1,7 @@
 package main
 
+// Dead code — kept for reference only (pre-Cobra legacy entrypoint).
+
 import (
 	"fmt"
 	"os"
@@ -41,7 +43,7 @@ func main2() {
 
 	fmt.Println("Starting Poseidon manager")
 	// workers := []string{fmt.Sprintf("%s:%d", whost, wport)}
-	m := manager.New(workers, "epvm", "persistent")
+	m := manager.New(workers, "epvm", "persistent", nil, nil)
 	mapi := manager.Api{Address: mhost, Port: mport, Manager: m}
 
 	go m.ProcessTasks()

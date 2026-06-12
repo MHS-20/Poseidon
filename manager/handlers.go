@@ -76,3 +76,12 @@ func (a *Api) GetNodesHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	json.NewEncoder(w).Encode(a.Manager.WorkerNodes)
 }
+
+func (a *Api) GetStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"isLeader":  a.Manager.IsLeader(),
+		"taskCount": len(a.Manager.GetTasks()),
+	})
+}

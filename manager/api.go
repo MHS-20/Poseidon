@@ -32,6 +32,8 @@ func (a *Api) initRouter() {
 	a.Router.Route("/nodes", func(r chi.Router) {
 		r.Get("/", a.GetNodesHandler)
 	})
+
+	a.Router.Get("/status", a.GetStatusHandler)
 }
 
 func (a *Api) Start() {
