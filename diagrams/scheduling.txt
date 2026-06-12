@@ -1,0 +1,20 @@
+Developer          Manager              Scheduler            Worker
+    |                  |                    |                   |
+    |-- Submit task --> |                    |                   |
+    |                  |                    |                   |
+    |                  |-- SelectCandidateNodes() ----------->  |
+    |                  |                    |                   |
+    |                  | <-- List of nodes -|                   |
+    |                  |                    |                   |
+    |                  |-- Score() -------> |                   |
+    |                  |                    |                   |
+    |                  | <-- List of scored nodes ------------- |
+    |                  |                    |                   |
+    |                  |-- Pick() --------> |                   |
+    |                  |                    |                   |
+    |                  | <-- Node --------- |                   |
+    |                  |                    |                   |
+    |                  |-- HTTP POST /tasks -----------------> |
+    |                  |                    |                   |
+    |                  | <-- HTTP 201 ----------------------- |
+    |                  |                    |                   |

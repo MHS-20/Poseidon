@@ -1,0 +1,25 @@
++----------------------------------------------+
+|  Worker                                      |
+|                                              |
+|                  +----------+                |
+|                  |   API    |                |
+|                  +----------+                |
+|                                              |
+|   +--------------+    +--------------+       |
+|   |   Task DB    |    |  Task queue  |       |
+|   +--------------+    +--------------+       |
+|                                              |
+|   +--------------+    +--------------+       |
+|   |   Runtime    |    |   Metrics    |       |
+|   |   (Docker)   |    |              |       |
+|   +--------------+    +--------------+       |
+|          ^                                   |
++----------|-----------------------------------+
+           |
+        (tasks)
+
+  API          = Front door; receives tasks from the manager
+  Task DB      = Persists state of all worker tasks
+  Task queue   = Buffers incoming tasks until processed
+  Runtime      = Starts/stops tasks via Docker
+  Metrics      = Exposes host + task metrics to the manager
