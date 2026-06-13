@@ -37,6 +37,12 @@ github.com/Azure/go-autorest/logger v0.2.0/go.mod h1:T9E3cAhj2VqvPOtCYAvby9aBXkZ
 github.com/Azure/go-autorest/tracing v0.6.0/go.mod h1:+vhtPC754Xsa23ID7GlGsrdKBpUA79WCAKPPZVC2DeU=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
+github.com/MHS-20/Raft v0.0.0-20260609140646-4022162ee302 h1:jdUov0R93TqufzbJ/TTlkkdQFwODiQ739UEZR3Uw3XY=
+github.com/MHS-20/Raft v0.0.0-20260609140646-4022162ee302/go.mod h1:mQonA3Ax2SFvhHbg2TV4MYC9VK7Hl8EWKwEpM/MrzI4=
+github.com/MHS-20/Zodiac v0.0.0-20260612211031-d0ef1fddeaa0 h1:oYRpJVEnppT9OdJMyA54dlg/IJiQM/tspRk882v8+j4=
+github.com/MHS-20/Zodiac v0.0.0-20260612211031-d0ef1fddeaa0/go.mod h1:Jr6tYK9IMqGaU0U6ZxtZ11s+Rwao0omqdG5tpnpb7Xc=
+github.com/MHS-20/Zodiac v0.0.0-20260613093939-070e12f47513 h1:QXgroMpzdR6XAQ1jFQnmSmwldaeTKmWv7vtlP4+x5Qk=
+github.com/MHS-20/Zodiac v0.0.0-20260613093939-070e12f47513/go.mod h1:Jr6tYK9IMqGaU0U6ZxtZ11s+Rwao0omqdG5tpnpb7Xc=
 github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcyvVC4A4RozmA=
 github.com/Microsoft/go-winio v0.4.14/go.mod h1:qXqCSQ3Xa7+6tgxaGTIe4Kpcdsi+P8jBhyzoq1bpyYA=
 github.com/Microsoft/go-winio v0.4.15-0.20190919025122-fc70bd9a86b5/go.mod h1:tTuCMEN+UleMWgg9dVx4Hu52b1bJo+59jBh3ajtinzw=

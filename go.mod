@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/MHS-20/Raft v0.0.0-20260609140646-4022162ee302
-	github.com/MHS-20/Zodiac v0.0.0
+	github.com/MHS-20/Zodiac v0.0.0-20260613093939-070e12f47513
 	github.com/boltdb/bolt v1.3.1
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/docker/docker v20.10.6+incompatible
@@ -15,11 +15,6 @@ require (
 	github.com/google/uuid v1.2.0
 	github.com/miekg/dns v1.1.72
 	github.com/spf13/cobra v1.9.1
-)
-
-replace (
-	github.com/MHS-20/Raft => /home/sentinel/Coding/Projects/Raft
-	github.com/MHS-20/Zodiac => /home/sentinel/Coding/Projects/Zodiac
 )
 
 require (
